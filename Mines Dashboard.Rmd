@@ -1,0 +1,353 @@
+---
+title: "Mines Dashboard"
+author: "Melinda Wong"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+    theme: sandstone
+    source_code: embed
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(sf)
+library(dplyr)
+library(shinyWidgets)
+library(leaflet)
+library(RColorBrewer)
+library(reactable)
+
+# Load the data
+wv <- st_read("data/wv_mines_cleaned.gpkg")
+va <- st_read("data/va_mines_cleaned.gpkg")
+```
+
+
+West Virginia {data-orientation=rows}
+===================================== 
+
+Sidebar {.sidebar}
+-------------------------------------
+
+### Inputs
+
+```{r}
+# Sidebar filters
+ore_choices <- sort(unique(wv$ore_type))
+checkboxGroupInput("ore_type", "Ore Type:",
+                   choices = ore_choices, 
+                   selected = ore_choices)
+ore_alert <- reactive({
+    if(length(input$ore_type) == 0){
+      show_alert(
+        title = "Error!",
+      text = "Please select at least one ore type to see data",
+      type = "error"
+      )
+    }
+  })
+ore_alert
+
+date_max <- max(wv$date_prepared)
+date_min <- min(wv$date_prepared)
+dateRangeInput("date_range", "Select Date Range:",
+               start = date_min,
+               end = date_max)
+
+acres_max <- max(as.numeric(wv$total_units))
+acres_min <- min(as.numeric(wv$total_units))
+sliderInput("total_units", "Acres:", 
+    min = acres_min, 
+    max = acres_max, 
+    value = c(acres_min, acres_max) 
+  )
+
+county_choices <- sort(unique(wv$county))
+checkboxGroupInput("county", "County:",
+                   choices = county_choices, 
+                   selected = county_choices)
+county_alert <- reactive({
+    if(length(input$county) == 0){
+      show_alert(
+        title = "Error!",
+      text = "Please select at least one county to see data",
+      type = "error"
+      )
+    }
+  })
+county_alert
+```
+
+## Map
+
+### Map of Potential Sites in West Virginia
+
+```{r}
+# Reactive filtering based on inputs
+filtered_data <- reactive({
+  data <- wv %>%
+    filter(
+      (ore_type %in% as.vector(input$ore_type)) &
+      (county %in% as.vector(input$county)) &
+      (date_prepared >= input$date_range[1]) &
+      (date_prepared <= input$date_range[2]) &
+      (total_units >= input$total_units[1]) &
+      (total_units <= input$total_units[2])
+    )
+  return(data)
+})
+
+
+wv_map <- renderLeaflet({
+  palette <- colorFactor(brewer.pal(n = length(unique(filtered_data()$ore_type)), name = "Set1"), domain = filtered_data()$ore_type)
+  leaflet(data = filtered_data()) %>%
+    addTiles() %>%
+    addProviderTiles(providers$CartoDB.Positron) %>% 
+    addCircleMarkers(~longitude, ~latitude,
+                     color = ~palette(ore_type),
+                     popup = ~paste("Name: ", problem_area, "<br>", 
+                                    "Ore Type: ", ore_type, "<br>",
+                                    "County: ", county, "<br>",
+                                    "Acres: ", total_units, "<br>",
+                                    "Date Prepared: ", date_prepared),
+                     radius = 5, fillOpacity = 0.5) %>% 
+    addLegend("topright", pal = palette, values = filtered_data()$ore_type,
+              title = "Ore Types", opacity = 0.7)
+})
+wv_map
+```
+
+## Data Table
+
+### Data Table
+
+```{r}
+wv_table <- renderReactable({
+  reactable(
+    filtered_data() %>% 
+      select(c(problem_area, county, ore_type, date_prepared, program, total_units, Owner.Name, Additional.Ownership.Notes, Property.Assessment.Report.Link)),
+    columns = list(
+      problem_area = colDef(name = "Name"),
+      county = colDef(name = "County"),
+      ore_type = colDef(name = "Ore Type"),
+      date_prepared = colDef(name = "Date Prepared"),
+      program = colDef(name = "Funding Programs"),
+      total_units = colDef(name = "Acres",
+                           maxWidth = 60),
+      Owner.Name = colDef(name = "Owner Name"),
+      Additional.Ownership.Notes = colDef("Ownership Notes",
+                                          minWidth = 175),
+      Property.Assessment.Report.Link = colDef("Property Assessment",
+                                          minWidth = 175)
+    ),
+    showSortable = TRUE,
+    filterable = TRUE,
+    bordered = TRUE,
+    highlight = TRUE
+  )
+})
+wv_table
+```
+
+## Data Download {data-height="100"}
+
+#### Download Data
+
+```{r}
+#downloadButton("downloadData", "Download Data")
+
+data_download <- downloadHandler(
+    filename = function() {
+      paste("table_data", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      write.csv(filtered_data(), file, row.names = FALSE)
+    }
+)
+data_download
+```
+  
+## Methodology
+
+#### Methodology
+
+Explain the data processing, cleaning, etc. that we did
+
+* Source
+* Source
+* Source<link>
+
+Virginia {data-orientation=rows}
+=====================================  
+
+Sidebar {.sidebar}
+-------------------------------------
+
+### Inputs
+
+```{r}
+# Sidebar filters
+
+# Ore Choices
+mineral_choices <- sort(unique(va$Mineral))
+checkboxGroupInput("ore_type2", "Ore Type:",
+                   choices = mineral_choices,
+                   selected = mineral_choices)
+
+ore_alert2 <- reactive({
+    if(length(input$ore_type2) == 0){
+      show_alert(
+        title = "Error!",
+      text = "Please select at least one ore type to see data",
+      type = "error"
+      )
+    }
+  })
+ore_alert2
+
+# Date Choices
+date_max2 <- max(va$InspectDate, na.rm = TRUE)
+date_min2 <- min(va$InspectDate, na.rm = TRUE)
+dateRangeInput("date_range2", "Select Date Range:",
+               start = date_min2,
+               end = date_max2)
+
+# Mine Acres Choices
+acres_max2 <- max(as.numeric(va$MineAcres))
+acres_min2 <- min(as.numeric(va$MineAcres))
+sliderInput("total_units2", "Mine Acres:",
+    min = acres_min2,
+    max = acres_max2,
+    value = c(acres_min2, acres_max2)
+  )
+
+# Water Acres Choices
+acres_max3 <- max(as.numeric(va$WaterAcres))
+acres_min3 <- min(as.numeric(va$WaterAcres))
+sliderInput("total_units3", "Water Acres:",
+    min = acres_min3,
+    max = acres_max3,
+    value = c(acres_min3, acres_max3)
+  )
+
+# Distance from Mine to Water Choices
+dis_max <- max(as.numeric(va$DistanceMineWater))
+dis_min <- min(as.numeric(va$DistanceMineWater))
+sliderInput("distance1", "Distance between Mine and Water:",
+    min = dis_min,
+    max = dis_max,
+    value = c(dis_min, dis_max)
+  )
+
+# County Choices
+county_choices2 <- sort(unique(va$County))
+checkboxGroupInput("county2", "County:",
+                   choices = county_choices2,
+                   selected = county_choices2)
+county_alert2 <- reactive({
+    if(length(input$county2) == 0){
+      show_alert(
+        title = "Error!",
+      text = "Please select at least one county to see data",
+      type = "error"
+      )
+    }
+  })
+county_alert2
+```
+
+## Map
+
+### Map of Potential Sites in West Virginia
+```{r}
+filtered_va <- reactive({
+  data <- va %>%
+    filter(
+      (Mineral %in% as.vector(input$ore_type2)) &
+      (County %in% as.vector(input$county2)) &
+      (InspectDate >= input$date_range2[1]) &
+      (InspectDate <= input$date_range2[2]) &
+      (MineAcres >= input$total_units2[1]) &
+      (MineAcres <= input$total_units2[2]) &
+      (WaterAcres >= input$total_units3[1]) &
+      (WaterAcres <= input$total_units3[2]) &
+      (DistanceMineWater >= input$distance1[1]) &
+      (DistanceMineWater <= input$distance1[2])
+    )
+  return(data)
+})
+
+va_map <- renderLeaflet({
+  palette2 <- colorFactor(brewer.pal(n = length(unique(filtered_va()$Mineral)), name = "Set1"), domain = filtered_va()$Mineral)
+  leaflet(data = filtered_va()) %>%
+    addTiles() %>%
+    addProviderTiles(providers$CartoDB.Positron) %>% 
+    addCircleMarkers(~longitude, ~latitude,
+                     color = ~palette2(Mineral),
+                     popup = ~paste("Name: ", SiteName, "<br>", 
+                                    "Ore Type: ", Mineral, "<br>",
+                                    "County: ", County, "<br>",
+                                    "Mine Acres: ", MineAcres, "<br>",
+                                    "Water Acres: ", WaterAcres, "<br>",
+                                    "Date Prepared: ", InspectDate),
+                     radius = 5, fillOpacity = 0.5) %>% 
+    addLegend("topright", pal = palette2, values = filtered_va()$Mineral,
+              title = "Ore Types", opacity = 0.7)
+})
+va_map
+```
+
+
+
+
+## Data Table
+
+### Data Table
+
+```{r}
+va_table <- renderReactable({
+  reactable(
+    filtered_va() %>% 
+      select(c(SiteName, Mineral, County, MineAcres, WaterName, WaterAcres, DistanceMineWater, Owner.Name, Owner.Address, Link)),
+    columns = list(
+      SiteName = colDef(name = "Mine Name"), 
+      Mineral = colDef(name = "Ore Type"), 
+      County = colDef(name = "County"), 
+      MineAcres = colDef(name = "Mine Acres"), 
+      WaterName = colDef(name = "Water Name"), 
+      WaterAcres = colDef(name = "Water Acres"), 
+      DistanceMineWater = colDef(name = "Distance Mine to Water"), 
+      Owner.Name = colDef(name = "Owner Name"), 
+      Owner.Address = colDef(name = "Owner Address"), 
+      Link = colDef(name = "Link")
+    ),
+    showSortable = TRUE,
+    filterable = TRUE,
+    bordered = TRUE,
+    highlight = TRUE
+  )
+})
+va_table
+```
+
+## Data Download {data-height="100"}
+
+#### Download Data
+
+```{r}
+#downloadButton("downloadData", "Download Data")
+
+data_download <- downloadHandler(
+    filename = function() {
+      paste("table_data", Sys.Date(), ".csv")
+    },
+    content = function(file) {
+      write.csv(filtered_va(), file, row.names = FALSE)
+    }
+)
+data_download
+```
+  
